@@ -1,10 +1,11 @@
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttersqflite/DB_Model.dart';
 import 'package:fluttersqflite/MoviesModel.dart';
 import 'package:http/http.dart' as http;
-
+import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'database_helper.dart';
 void main() => runApp(MyApp());
 
@@ -59,36 +60,49 @@ class _MyHomePageState extends State<MyHomePage> {
     var response = await http.get(url);
     return response.body;
   }
+  RefreshController _refreshController =
+  RefreshController(initialRefresh: false);
 
+  void _onRefresh() async{
+    // monitor network fetch
+    loadMovieData();
+    await Future.delayed(Duration(milliseconds: 1000));
+    // if failed,use refreshFailed()
+    _refreshController.refreshCompleted();
+  }
+
+  void _onLoading() async{
+    // monitor network fetch
+    loadMovieData();
+    await Future.delayed(Duration(milliseconds: 1000));
+    // if failed,use loadFailed(),if no data return,use LoadNodata()
+
+    if(mounted)
+      setState(() {
+
+      });
+    _refreshController.loadComplete();
+  }
   Future loadMovieData() async {
     String jsonResponse = await loadMovieDataFromRest();
     final jsonMovieData = json.decode(jsonResponse);
     MoviesModel model = new MoviesModel.fromJson(jsonMovieData);
     print("Movie Title" + model.results[0].title);
     for(var i = 0; i< model.results.length; i++){
-      _insert(model.results[i].title, model.results[i].releaseDate, model.results[i].posterPath);
-    }
-  }
 
-  int _counter = 0;
+      _insert(model.results[i].title, model.results[i].releaseDate, model.results[i].posterPath);
+
+    }
+
+  }
+  
 
 
   @override
   void initState() {
     super.initState();
-    _getMoviesDataLocal();
-//    loadMovieData();
-  }
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+    loadMovieData();
   }
 
   @override
@@ -101,64 +115,82 @@ class _MyHomePageState extends State<MyHomePage> {
     // than having to individually change instances of widgets.
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      body: SingleChildScrollView(
-        child: Container(
-          width: 500,
-          child: ListView.builder(
-            scrollDirection: Axis.vertical,
-            shrinkWrap: true,
-            physics: NeverScrollableScrollPhysics(),
-            itemCount: _db_model.length,
-            itemBuilder: (context,index){
-              return ListTile(title:Container(
-                height: 500,
-                width: 500,
-                child: Card(
-                  margin: EdgeInsets.fromLTRB(15, 0, 15, 0),
-                  elevation: 4.0,
-                  color: Colors.black54,
-                  shape: BeveledRectangleBorder(
-                    borderRadius: BorderRadius.circular(10.0),
-                  ),
-                  child: Column(
-                    children: <Widget>[
-                      Text(_db_model[index].movieName,
-                        style: TextStyle(
-                            color: Colors.white
+      body: SmartRefresher(
+        enablePullDown: true,
+        enablePullUp: true,
+        header: WaterDropHeader(),
+       
+        controller: _refreshController,
+        onRefresh: _onRefresh,
+        onLoading: _onLoading,
+        child: SingleChildScrollView(
+          child: Container(
+            child: _db_model.length<=0 ?Center(
+              child: Text("No Movies Found"),
+            ): ListView.builder(
+              scrollDirection: Axis.vertical,
+              padding: EdgeInsets.fromLTRB(0, 50, 0, 50),
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              itemCount: _db_model.length,
+              itemBuilder: (context,index){
+                return ListTile(title:Container(
+                  height: 500,
+                  width: 500,
+                  child: Card(
+                    margin: EdgeInsets.fromLTRB(15, 0, 15, 0),
+                    elevation: 4.0,
+                    color: Colors.black54,
+                    shape: BeveledRectangleBorder(
+                      borderRadius: BorderRadius.circular(10.0),
+                    ),
+                    child: Column(
+                      children: <Widget>[
+                        Text(_db_model[index].movieName,
+                          style: TextStyle(
+                              color: Colors.white
+                          ),
                         ),
-                      ),
-                      Text(_db_model[index].releasedate,
-                        style: TextStyle(
-                            color: Colors.white
+                        Text(_db_model[index].releasedate,
+                          style: TextStyle(
+                              color: Colors.white
+                          ),
                         ),
-                      ),
-                      Image.network(DB_Model.posterURL + _db_model[index].posterUrl,height: 400),
-                    ],
+                        Image.network(DB_Model.posterURL + _db_model[index].posterUrl,height: 400),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
+        onPressed: _deleteAllData,
         tooltip: 'Increment',
-        child: Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+        child: Icon(Icons.delete_forever),
+      ),
+      // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 
   void _insert(String movieName, DateTime releaseDate, String moviePosterName) async {
     // row to insert
-    Map<String, dynamic> row = {
-      DatabaseHelper.columnMovieName : movieName,
-      DatabaseHelper.columnReleaseData  : releaseDate.toString(),
-      DatabaseHelper.columnPosterImage : moviePosterName
-    };
-    final id = await dbHelper.insert(row);
-    print('inserted row id: $id');
+    try{
+      Map<String, dynamic> row = {
+        DatabaseHelper.columnMovieName : movieName,
+        DatabaseHelper.columnReleaseData  : releaseDate.toString(),
+        DatabaseHelper.columnPosterImage : moviePosterName
+      };
+      final id = await dbHelper.insert(row);
+      _getMoviesDataLocal();
+      print('inserted row id: $id');
+    } on Exception catch(_){
+      print("Exception caught");
+    }
+
   }
 
   void _getMoviesDataLocal() async{
@@ -166,7 +198,14 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       _db_model = list.map((model) => DB_Model.fromJson(model)).toList();
     });
+  }
 
-    print("Length " + _db_model[0].movieName);
+  void _deleteAllData() async{
+
+    await dbHelper.delete();
+    setState(() {
+      _db_model  = new List<DB_Model>();
+    });
+
   }
 }

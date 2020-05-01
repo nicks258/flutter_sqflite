@@ -38,8 +38,8 @@ class DatabaseHelper {
           CREATE TABLE $table (
             $columnId INTEGER PRIMARY KEY,
             $columnMovieName TEXT UNIQUE NOT NULL,
-            $columnPosterImage TEXT NOT NULL,
-            $columnReleaseData TEXT NOT NULL
+            $columnPosterImage TEXT UNIQUE NOT NULL,
+            $columnReleaseData TEXT UNIQUE NOT NULL
           )
           ''');
   }
@@ -58,6 +58,11 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> queryAllRows() async {
     Database db = await instance.database;
     return await db.query(table);
+  }
+
+  Future delete() async{
+    Database database = await instance.database;
+    await database.delete(table);
   }
 
 }
